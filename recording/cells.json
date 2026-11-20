@@ -1,0 +1,324 @@
+[
+ {
+  "i": 0,
+  "type": "markdown",
+  "start": 4.53,
+  "end": 6.07,
+  "text": "# The End-to-End Data Science Pipeline, on real messy data\n**Question:** what is a fair nightly price for an Airbnb listing in New York City?\nData: Inside Airbnb, NYC snapshot 2026-09-14, licensed CC "
+ },
+ {
+  "i": 1,
+  "type": "code",
+  "start": 6.07,
+  "end": 7.89,
+  "text": "import json, time, re, numpy as np, pandas as pd\nfrom pathlib import Path\nnp.random.seed(42)\nDATA, REP, MOD = Path(\"../data\"), Path(\"../reports\"), Path(\"../models\")\nfor d in (DATA / \"clean\", REP, MOD)"
+ },
+ {
+  "i": 2,
+  "type": "markdown",
+  "start": 7.89,
+  "end": 9.42,
+  "text": "## Stage 1 \u00b7 Define the problem"
+ },
+ {
+  "i": 3,
+  "type": "code",
+  "start": 9.42,
+  "end": 10.96,
+  "text": "GOAL   = \"predict the nightly price of a NYC listing\"\nTARGET = \"price\"\nMETRIC = \"MAE in dollars (average miss per listing)\"\nRULE   = \"the model must beat a simple baseline, on listings it has never se"
+ },
+ {
+  "i": 4,
+  "type": "markdown",
+  "start": 10.96,
+  "end": 12.5,
+  "text": "## Stage 2 \u00b7 Ingest: load the raw file exactly as it arrives"
+ },
+ {
+  "i": 5,
+  "type": "code",
+  "start": 12.5,
+  "end": 14.24,
+  "text": "RAW = DATA / \"raw/listings.csv.gz\"                # never edited: the raw layer is read-only\nt = time.time(); raw = pd.read_csv(RAW, low_memory=False); t_csv = time.time() - t\nkinds = raw.dtypes.map(l"
+ },
+ {
+  "i": 6,
+  "type": "code",
+  "start": 14.24,
+  "end": 15.79,
+  "text": "raw[[\"name\", \"neighbourhood_group_cleansed\", \"room_type\", \"price\", \"bathrooms_text\", \"minimum_nights\"]].head(4)"
+ },
+ {
+  "i": 7,
+  "type": "markdown",
+  "start": 15.79,
+  "end": 17.32,
+  "text": "## Stage 3 \u00b7 Profile and validate: what is wrong with this data?"
+ },
+ {
+  "i": 8,
+  "type": "code",
+  "start": 17.32,
+  "end": 18.87,
+  "text": "miss = raw.isna().mean().sort_values(ascending=False)\nprint(f\"columns 100% empty: {(miss == 1).sum()}\")\nprint(f\"price missing:      {raw.price.isna().mean():.1%}\")\nprint(f\"price stored as:    text, e."
+ },
+ {
+  "i": 9,
+  "type": "code",
+  "start": 18.87,
+  "end": 20.41,
+  "text": "price_num = pd.to_numeric(raw.price.str.replace(r\"[$,]\", \"\", regex=True), errors=\"coerce\")\nrules = {                                                              # validation rules: each row must pass"
+ },
+ {
+  "i": 10,
+  "type": "code",
+  "start": 20.41,
+  "end": 21.95,
+  "text": "# Is the price missing at random? No: listings that require 30+ nights hide it far more often.\nlong_stay = raw.minimum_nights >= 30\ngap = raw.price.isna().groupby(long_stay).mean()\nprint(f\"price missi"
+ },
+ {
+  "i": 11,
+  "type": "markdown",
+  "start": 21.95,
+  "end": 23.49,
+  "text": "## Stage 4 \u00b7 Clean: one documented step at a time"
+ },
+ {
+  "i": 12,
+  "type": "code",
+  "start": 23.49,
+  "end": 25.03,
+  "text": "log = []                                                               # every step: what changed, rows and columns after\ndef step(name, d): log.append({\"step\": name, \"rows\": len(d), \"cols\": d.shape[1"
+ },
+ {
+  "i": 13,
+  "type": "code",
+  "start": 25.03,
+  "end": 26.57,
+  "text": "before = df.price.dropna().iloc[:3].tolist()\ndf[\"price\"] = pd.to_numeric(df.price.str.replace(r\"[$,]\", \"\", regex=True), errors=\"coerce\")\nprint(\"price text \u2192 number:\", before, \"\u2192\", df.price.dropna().il"
+ },
+ {
+  "i": 14,
+  "type": "code",
+  "start": 26.57,
+  "end": 28.12,
+  "text": "def baths(t):\n    if pd.isna(t): return np.nan\n    if \"half\" in t.lower(): return 0.5\n    return float(re.findall(r\"[\\d.]+\", t)[0])\nprint({t: baths(t) for t in [\"1 bath\", \"1.5 shared baths\", \"Half-bat"
+ },
+ {
+  "i": 15,
+  "type": "code",
+  "start": 28.12,
+  "end": 29.77,
+  "text": "am = df.amenities.map(json.loads)                                       # a JSON list hidden inside one text cell\ndf[\"n_amenities\"] = am.map(len)\nfor name, word in [(\"wifi\", \"Wifi\"), (\"kitchen\", \"Kitc"
+ },
+ {
+  "i": 16,
+  "type": "code",
+  "start": 29.77,
+  "end": 31.31,
+  "text": "df = step(\"drop impossible minimum stays (> 365 nights)\", df[df.minimum_nights <= 365])\ncap = 2000\nprint(f\"price 99th percentile: ${df.price.quantile(.99):,.0f} \u00b7 max: ${df.price.max():,.0f}\")\nprint(f"
+ },
+ {
+  "i": 17,
+  "type": "code",
+  "start": 31.31,
+  "end": 32.89,
+  "text": "exact = raw.drop(columns=[\"id\", \"listing_url\"]).duplicated().sum()          # checked on the full raw rows\ntwins = df.duplicated(subset=[\"host_id\", \"latitude\", \"longitude\", \"room_type\", \"accommodates\""
+ },
+ {
+  "i": 18,
+  "type": "markdown",
+  "start": 32.89,
+  "end": 34.42,
+  "text": "## Stage 5 \u00b7 Store: raw layer \u2192 clean layer"
+ },
+ {
+  "i": 19,
+  "type": "code",
+  "start": 34.42,
+  "end": 36.04,
+  "text": "CLEAN = DATA / \"clean/listings_2026-09-14.parquet\"                       # versioned by snapshot date\ndf.to_parquet(CLEAN, index=False)\nback = pd.read_parquet(CLEAN)\nprint(f\"raw   CSV.gz  {RAW.stat()."
+ },
+ {
+  "i": 20,
+  "type": "markdown",
+  "start": 36.04,
+  "end": 37.57,
+  "text": "## Stage 6 \u00b7 Explore: let the data answer questions"
+ },
+ {
+  "i": 21,
+  "type": "code",
+  "start": 37.57,
+  "end": 39.12,
+  "text": "print(df.price.describe(percentiles=[.5]).round(0).to_string())\nh_raw = np.histogram(df.price, bins=40); h_log = np.histogram(np.log(df.price), bins=40)\nVIZ[\"hist\"] = {\"raw\": [h_raw[0].tolist(), h_raw"
+ },
+ {
+  "i": 22,
+  "type": "code",
+  "start": 39.12,
+  "end": 40.66,
+  "text": "by = df.groupby([\"neighbourhood_group_cleansed\", \"room_type\"]).price.median().unstack().round(0)\nprint(by.to_string())\nVIZ[\"by_borough\"] = {\"rows\": by.index.tolist(), \"cols\": by.columns.tolist(), \"val"
+ },
+ {
+  "i": 23,
+  "type": "code",
+  "start": 40.66,
+  "end": 42.2,
+  "text": "s = df.sample(4000, random_state=7)\nVIZ[\"map\"] = {\"lat\": s.latitude.round(4).tolist(), \"lon\": s.longitude.round(4).tolist(), \"logp\": np.log(s.price).round(3).tolist()}\nmed = df.groupby(df.minimum_nigh"
+ },
+ {
+  "i": 24,
+  "type": "markdown",
+  "start": 42.2,
+  "end": 43.73,
+  "text": "## Stage 7 \u00b7 Feature engineering: turn knowledge into columns"
+ },
+ {
+  "i": 25,
+  "type": "code",
+  "start": 43.73,
+  "end": 45.29,
+  "text": "TSQ = (40.7580, -73.9855)                                                # Times Square\nlat1, lon1, lat2, lon2 = map(np.radians, (df.latitude, df.longitude, TSQ[0], TSQ[1]))\na = np.sin((lat2 - lat1) /"
+ },
+ {
+  "i": 26,
+  "type": "markdown",
+  "start": 45.29,
+  "end": 46.82,
+  "text": "## Stage 8 \u00b7 Split before anything learns"
+ },
+ {
+  "i": 27,
+  "type": "code",
+  "start": 46.82,
+  "end": 48.99,
+  "text": "from sklearn.model_selection import GroupShuffleSplit, train_test_split\nnew = df[pd.to_datetime(df.first_review) >= \"2026-01-01\"]               # listings that appeared in 2026: kept for Stage 15\npool"
+ },
+ {
+  "i": 28,
+  "type": "markdown",
+  "start": 48.99,
+  "end": 50.52,
+  "text": "## Stage 9 \u00b7 One pipeline: preprocessing learns from the training set only"
+ },
+ {
+  "i": 29,
+  "type": "code",
+  "start": 50.52,
+  "end": 52.22,
+  "text": "from sklearn.pipeline import Pipeline, make_pipeline\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.preprocessing import OneHotEncoder, StandardSca"
+ },
+ {
+  "i": 30,
+  "type": "markdown",
+  "start": 52.22,
+  "end": 53.75,
+  "text": "## Stage 10 \u00b7 The leakage trap"
+ },
+ {
+  "i": 31,
+  "type": "code",
+  "start": 53.75,
+  "end": 56.66,
+  "text": "leak_cols = NUM + CAT + [\"price_quote_price_per_night\"]\nlq = lambda d: d.assign(price_quote_price_per_night=pd.to_numeric(d.price_quote_price_per_night.astype(str).str.replace(r\"[$,]\", \"\", regex=True)"
+ },
+ {
+  "i": 32,
+  "type": "markdown",
+  "start": 56.66,
+  "end": 58.19,
+  "text": "## Stage 11 \u00b7 Model: baseline first, then better models"
+ },
+ {
+  "i": 33,
+  "type": "code",
+  "start": 58.19,
+  "end": 66.82,
+  "text": "base = train.groupby([\"neighbourhood_group_cleansed\", \"room_type\"]).price.median()\np_base = test.set_index([\"neighbourhood_group_cleansed\", \"room_type\"]).index.map(base).fillna(train.price.median()).v"
+ },
+ {
+  "i": 34,
+  "type": "code",
+  "start": 66.82,
+  "end": 75.34,
+  "text": "# What the random split would have told us (look-alike twins on both sides):\ngbm_r = Pipeline([(\"prep\", prep(False)), (\"m\", lgb.LGBMRegressor(n_estimators=800, learning_rate=0.03, num_leaves=63, subsa"
+ },
+ {
+  "i": 35,
+  "type": "markdown",
+  "start": 75.34,
+  "end": 76.87,
+  "text": "## Stage 12 \u00b7 Evaluate: where does it go wrong?"
+ },
+ {
+  "i": 36,
+  "type": "code",
+  "start": 76.87,
+  "end": 78.47,
+  "text": "pred = np.exp(gbm.predict(Xte)); err = (pred - test.price).abs()\nby_b = pd.DataFrame({\"b\": test.neighbourhood_group_cleansed, \"e\": err, \"p\": test.price}).groupby(\"b\").agg(mae=(\"e\", \"mean\"), median_pri"
+ },
+ {
+  "i": 37,
+  "type": "markdown",
+  "start": 78.47,
+  "end": 80.01,
+  "text": "## Stage 13 \u00b7 Explain: which features matter?"
+ },
+ {
+  "i": 38,
+  "type": "code",
+  "start": 80.01,
+  "end": 83.57,
+  "text": "from sklearn.inspection import permutation_importance\nsmp = np.random.RandomState(0).choice(len(Xte), 2000, replace=False)\npi = permutation_importance(gbm, Xte.iloc[smp], yte.iloc[smp], n_repeats=3, r"
+ },
+ {
+  "i": 39,
+  "type": "markdown",
+  "start": 83.57,
+  "end": 85.1,
+  "text": "## Stage 14 \u00b7 Deploy: save the whole pipeline, serve predictions"
+ },
+ {
+  "i": 40,
+  "type": "code",
+  "start": 85.1,
+  "end": 86.67,
+  "text": "import joblib\nPATH = MOD / \"price_pipeline.joblib\"\njoblib.dump(gbm, PATH); model = joblib.load(PATH)                       # cleaning rules + encoder + model in one file\nprint(f\"saved {PATH.name}: {PA"
+ },
+ {
+  "i": 41,
+  "type": "code",
+  "start": 86.67,
+  "end": 88.49,
+  "text": "from fastapi import FastAPI\nimport warnings\nwith warnings.catch_warnings():                                           # the test client warns about its own httpx dependency\n    warnings.simplefilter(\""
+ },
+ {
+  "i": 42,
+  "type": "markdown",
+  "start": 88.49,
+  "end": 90.02,
+  "text": "## Stage 15 \u00b7 Monitor: does the model still hold on new data?"
+ },
+ {
+  "i": 43,
+  "type": "code",
+  "start": 90.02,
+  "end": 91.6,
+  "text": "def psi(a, b, bins=10):                                                  # population stability index: > 0.2 = real shift\n    q = np.unique(np.quantile(a.dropna(), np.linspace(0, 1, bins + 1)))\n    pa"
+ },
+ {
+  "i": 44,
+  "type": "markdown",
+  "start": 91.6,
+  "end": 93.14,
+  "text": "## Save the visual data"
+ },
+ {
+  "i": 45,
+  "type": "code",
+  "start": 93.14,
+  "end": 94.7,
+  "text": "json.dump(VIZ, open(REP / \"viz.json\", \"w\"), default=float)\nprint(\"saved\", \", \".join(VIZ))"
+ }
+]
